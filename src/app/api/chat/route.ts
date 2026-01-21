@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import OpenAI from "openai";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -8,11 +9,9 @@ const supabase = createClient(
 
 const WEBHOOK_URL = process.env.WEBHOOK_URL!;
 
-const IMMEDIATE_SAFETY_KEYWORDS =
-  /\b(danger|threat|harass|abuse|violen|stalk|unsafe|attack|assault|beat|hit|hurt|rape|kidnap|follow|scare|fear\s+for\s+my\s+life|emergency|help\s+me|someone\s+is|being\s+followed|domestic)\b/i;
-
-const EMOTIONAL_SUPPORT_KEYWORDS =
-  /\b(depress|anxious|anxiety|trauma|stress|mental|emotional|sad|cry|overwhelm|panic|afraid|lonely|hopeless|suicid|self.harm|worried|nervous|upset|feeling\s+down|can't\s+cope|breakdown)\b/i;
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY!,
+});
 
 type CareUnit =
   | "everyday_wellbeing_unit"
@@ -64,14 +63,45 @@ const FIELD_PROMPTS = {
     "Could you tell me more about your situation or concern? Take your time.",
 };
 
-function classifyConcern(message: string): CareUnit {
-  if (IMMEDIATE_SAFETY_KEYWORDS.test(message)) {
-    return "immediate_safety_response_unit";
+async function classifyConcern(message: string): Promise<CareUnit> {
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: `You are a classifier for a women's safety assistant. Classify the user's message into exactly one of these three categories:
+
+1. "immediate_safety" - Use when the user describes situations involving immediate physical danger, threats, harassment, abuse, violence, stalking, being followed, assault, domestic violence, or any situation requiring urgent safety intervention.
+
+2. "emotional_support" - Use when the user expresses emotional distress, mental health concerns, anxiety, depression, trauma, stress, feeling overwhelmed, loneliness, or needs someone to talk to about their feelings.
+
+3. "everyday_wellbeing" - Use for general questions about health, wellness, safety tips, self-care, daily routines, general advice, or anything that doesn't fit the above two categories.
+
+Respond with ONLY one of these exact words: immediate_safety, emotional_support, or everyday_wellbeing`,
+        },
+        {
+          role: "user",
+          content: message,
+        },
+      ],
+      temperature: 0,
+      max_tokens: 20,
+    });
+
+    const result = completion.choices[0]?.message?.content?.trim().toLowerCase();
+
+    if (result === "immediate_safety") {
+      return "immediate_safety_response_unit";
+    } else if (result === "emotional_support") {
+      return "emotional_support_unit";
+    } else {
+      return "everyday_wellbeing_unit";
+    }
+  } catch (error) {
+    console.error("Classification error:", error);
+    return "everyday_wellbeing_unit";
   }
-  if (EMOTIONAL_SUPPORT_KEYWORDS.test(message)) {
-    return "emotional_support_unit";
-  }
-  return "everyday_wellbeing_unit";
 }
 
 function extractAge(text: string): number | null {
@@ -85,11 +115,11 @@ function extractAge(text: string): number | null {
   return null;
 }
 
-function processStart(
+async function processStart(
   state: ConversationState,
   userMessage: string
-): { state: ConversationState; response: string } {
-  const careUnit = classifyConcern(userMessage);
+): Promise<{ state: ConversationState; response: string }> {
+  const careUnit = await classifyConcern(userMessage);
   state.care_unit = careUnit;
   state.user_concern = userMessage;
   state.current_node = "care_unit";
@@ -263,7 +293,7 @@ export async function POST(request: NextRequest) {
 
     let response: string;
     if (state.current_node === "start") {
-      const result = processStart(state, message);
+      const result = await processStart(state, message);
       state = result.state;
       response = result.response;
     } else {
