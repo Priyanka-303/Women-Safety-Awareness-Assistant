@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import OpenAI from "openai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -9,9 +9,8 @@ const supabase = createClient(
 
 const WEBHOOK_URL = process.env.WEBHOOK_URL!;
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY!,
-});
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY!);
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
 type CareUnit =
   | "everyday_wellbeing_unit"
@@ -30,30 +29,6 @@ interface ConversationState {
   awaiting_field: string | null;
 }
 
-const UNIT_RESPONSES: Record<
-  CareUnit,
-  { greeting: string; complete: string }
-> = {
-  everyday_wellbeing_unit: {
-    greeting:
-      "Thank you for reaching out. I'm here to help with general wellbeing, health awareness, and everyday safety guidance.",
-    complete:
-      "Thank you for sharing this information. Your concern has been noted and our Everyday Wellbeing team will provide guidance shortly. Remember, you deserve to feel safe and informed every day.",
-  },
-  immediate_safety_response_unit: {
-    greeting:
-      "I understand you may be in a concerning situation. Your safety is the priority. I'm here to help connect you with immediate support.",
-    complete:
-      "Your information has been received by our Immediate Safety Response team. If you are in immediate danger, please contact local emergency services. Help is on the way.",
-  },
-  emotional_support_unit: {
-    greeting:
-      "I hear you, and I want you to know that your feelings are valid. I'm here to listen and connect you with emotional support.",
-    complete:
-      "Thank you for trusting us with your feelings. Our Emotional Support team has received your information and will reach out with care and understanding. You are not alone.",
-  },
-};
-
 const FIELD_PROMPTS = {
   user_name:
     "May I know your name? You can use a nickname or alias if you prefer.",
@@ -65,35 +40,22 @@ const FIELD_PROMPTS = {
 
 async function classifyConcern(message: string): Promise<CareUnit> {
   try {
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "system",
-          content: `You are a classifier for a women's safety assistant. Classify the user's message into exactly one of these three categories:
+    const prompt = `You are a helpful Women Safety & Awareness Assistant. 
+Classify the concern below into one of the categories 
+-Everyday_Wellbeing_Unit
+-Immediate_Safety_Response_Unit
+-Emotional_Support_Unit
+Concern : ${message} 
+Respond only with one word : 
+Everyday_Wellbeing_Unit, Immediate_Safety_Response_Unit or Emotional_Support_Unit
+#Example : input : I want safety tips while traveling alone, Output : Everyday_Wellbeing_Unit`;
 
-1. "immediate_safety" - Use when the user describes situations involving immediate physical danger, threats, harassment, abuse, violence, stalking, being followed, assault, domestic violence, or any situation requiring urgent safety intervention.
+    const result = await model.generateContent(prompt);
+    const text = result.response.text().trim();
 
-2. "emotional_support" - Use when the user expresses emotional distress, mental health concerns, anxiety, depression, trauma, stress, feeling overwhelmed, loneliness, or needs someone to talk to about their feelings.
-
-3. "everyday_wellbeing" - Use for general questions about health, wellness, safety tips, self-care, daily routines, general advice, or anything that doesn't fit the above two categories.
-
-Respond with ONLY one of these exact words: immediate_safety, emotional_support, or everyday_wellbeing`,
-        },
-        {
-          role: "user",
-          content: message,
-        },
-      ],
-      temperature: 0,
-      max_tokens: 20,
-    });
-
-    const result = completion.choices[0]?.message?.content?.trim().toLowerCase();
-
-    if (result === "immediate_safety") {
+    if (text.includes("Immediate_Safety_Response_Unit")) {
       return "immediate_safety_response_unit";
-    } else if (result === "emotional_support") {
+    } else if (text.includes("Emotional_Support_Unit")) {
       return "emotional_support_unit";
     } else {
       return "everyday_wellbeing_unit";
@@ -101,6 +63,16 @@ Respond with ONLY one of these exact words: immediate_safety, emotional_support,
   } catch (error) {
     console.error("Classification error:", error);
     return "everyday_wellbeing_unit";
+  }
+}
+
+function getFinalResponse(careUnit: CareUnit, userConcern: string): string {
+  if (careUnit === "immediate_safety_response_unit") {
+    return `'${userConcern}' : This situation may involve immediate safety risk. Please consider reaching out for urgent support or trusted help.`;
+  } else if (careUnit === "emotional_support_unit") {
+    return `'${userConcern}' : This sounds emotionally difficult. You are not alone, and emotional support is available.`;
+  } else {
+    return `'${userConcern}' : This appears to be a general wellbeing or awareness concern. Here is some guidance to help you stay informed and safe.`;
   }
 }
 
@@ -124,8 +96,7 @@ async function processStart(
   state.user_concern = userMessage;
   state.current_node = "care_unit";
 
-  const greeting = UNIT_RESPONSES[careUnit].greeting;
-  const response = `${greeting}\n\n${FIELD_PROMPTS.user_name}`;
+  const response = `I understand. ${FIELD_PROMPTS.user_name}`;
   state.awaiting_field = "user_name";
 
   return { state, response };
@@ -147,14 +118,12 @@ function processCareUnit(
     const age = extractAge(userMessage);
     if (age) {
       state.user_age = age;
-      if (state.user_concern) {
-        state.awaiting_field = null;
-        state.current_node = "complete";
-        return { state, response: UNIT_RESPONSES[state.care_unit!].complete };
-      } else {
-        state.awaiting_field = "user_concern";
-        return { state, response: FIELD_PROMPTS.user_concern };
-      }
+      state.awaiting_field = null;
+      state.current_node = "complete";
+      return {
+        state,
+        response: getFinalResponse(state.care_unit!, state.user_concern!),
+      };
     } else {
       return {
         state,
@@ -162,13 +131,6 @@ function processCareUnit(
           "I didn't quite catch that. Could you please share your age as a number?",
       };
     }
-  }
-
-  if (awaiting === "user_concern") {
-    state.user_concern = userMessage;
-    state.awaiting_field = null;
-    state.current_node = "complete";
-    return { state, response: UNIT_RESPONSES[state.care_unit!].complete };
   }
 
   return {
