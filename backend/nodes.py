@@ -1,21 +1,7 @@
 import re
+from typing import tuple
 from state import ConversationState, CareUnit
-from classifier import classify_concern
-
-UNIT_RESPONSES = {
-    "everyday_wellbeing_unit": {
-        "greeting": "Thank you for reaching out. I'm here to help with general wellbeing, health awareness, and everyday safety guidance.",
-        "complete": "Thank you for sharing this information. Your concern has been noted and our Everyday Wellbeing team will provide guidance shortly. Remember, you deserve to feel safe and informed every day.",
-    },
-    "immediate_safety_response_unit": {
-        "greeting": "I understand you may be in a concerning situation. Your safety is the priority. I'm here to help connect you with immediate support.",
-        "complete": "Your information has been received by our Immediate Safety Response team. If you are in immediate danger, please contact local emergency services. Help is on the way.",
-    },
-    "emotional_support_unit": {
-        "greeting": "I hear you, and I want you to know that your feelings are valid. I'm here to listen and connect you with emotional support.",
-        "complete": "Thank you for trusting us with your feelings. Our Emotional Support team has received your information and will reach out with care and understanding. You are not alone.",
-    },
-}
+from classifier import classify_concern_with_gemini, get_care_unit_from_category
 
 FIELD_PROMPTS = {
     "user_name": "May I know your name? You can use a nickname or alias if you prefer.",
@@ -32,13 +18,15 @@ def extract_age(text: str) -> int | None:
     return None
 
 def process_start(state: ConversationState, user_message: str) -> tuple[ConversationState, str]:
-    care_unit = classify_concern(user_message)
-    state["care_unit"] = care_unit
     state["user_concern"] = user_message
+    
+    # Classify using Gemini
+    category_str = classify_concern_with_gemini(user_message)
+    state["category"] = category_str
+    state["care_unit"] = get_care_unit_from_category(category_str)
     state["current_node"] = "care_unit"
     
-    greeting = UNIT_RESPONSES[care_unit]["greeting"]
-    response = f"{greeting}\n\n{FIELD_PROMPTS['user_name']}"
+    response = f"I understand. {FIELD_PROMPTS['user_name']}"
     state["awaiting_field"] = "user_name"
     
     return state, response
@@ -55,33 +43,35 @@ def process_care_unit(state: ConversationState, user_message: str) -> tuple[Conv
         age = extract_age(user_message)
         if age:
             state["user_age"] = age
-            if state.get("user_concern"):
-                state["awaiting_field"] = None
-                state["current_node"] = "complete"
-                return state, UNIT_RESPONSES[state["care_unit"]]["complete"]
+            state["awaiting_field"] = None
+            state["current_node"] = "complete"
+            
+            # Use notebook-style responses for the final answer
+            care_unit = state.get("care_unit")
+            user_concern = state.get("user_concern", "")
+            
+            if care_unit == "immediate_safety_response_unit":
+                answer = (
+                    f"'{user_concern}' : This situation may involve immediate safety risk. "
+                    "Please consider reaching out for urgent support or trusted help."
+                )
+            elif care_unit == "emotional_support_unit":
+                answer = (
+                    f"'{user_concern}' : This sounds emotionally difficult. "
+                    "You are not alone, and emotional support is available."
+                )
             else:
-                state["awaiting_field"] = "user_concern"
-                return state, FIELD_PROMPTS["user_concern"]
+                answer = (
+                    f"'{user_concern}' : This appears to be a general wellbeing or awareness concern. "
+                    "Here is some guidance to help you stay informed and safe."
+                )
+            
+            state["answer"] = answer
+            return state, answer
         else:
             return state, "I didn't quite catch that. Could you please share your age as a number?"
     
-    elif awaiting == "user_concern":
-        state["user_concern"] = user_message
-        state["awaiting_field"] = None
-        state["current_node"] = "complete"
-        return state, UNIT_RESPONSES[state["care_unit"]]["complete"]
-    
     return state, "I'm here to help. Could you tell me more about what's on your mind?"
-
-def get_missing_fields(state: ConversationState) -> list[str]:
-    missing = []
-    if not state.get("user_name"):
-        missing.append("user_name")
-    if not state.get("user_age"):
-        missing.append("user_age")
-    if not state.get("user_concern"):
-        missing.append("user_concern")
-    return missing
 
 def is_complete(state: ConversationState) -> bool:
     return (

@@ -8,6 +8,8 @@ class ConversationState(TypedDict, total=False):
     user_name: Optional[str]
     user_age: Optional[int]
     user_concern: Optional[str]
+    category: Optional[str]
+    answer: Optional[str]
     care_unit: Optional[CareUnit]
     current_node: str
     webhook_sent: bool
