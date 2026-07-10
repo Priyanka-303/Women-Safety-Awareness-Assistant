@@ -7,10 +7,7 @@ import {
   Heart, 
   AlertCircle, 
   Users, 
-  Settings, 
   MapPin, 
-  PhoneCall,
-  X,
   Plus,
   Trash2
 } from "lucide-react";
