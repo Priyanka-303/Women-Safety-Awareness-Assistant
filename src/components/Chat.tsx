@@ -75,7 +75,7 @@ export function Chat() {
     setIsLoading(true);
 
     try {
-      const response = await fetch("/api/chat", {
+      const response = await fetch("https://women-safety-awareness-assistant-2.onrender.com/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: userMessage, session_id: sessionId }),
@@ -125,7 +125,7 @@ export function Chat() {
         }
       }
 
-      const response = await fetch("/api/chat", {
+      const response = await fetch("https://women-safety-awareness-assistant-2.onrender.com/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
@@ -410,4 +410,3 @@ export function Chat() {
     </div>
   );
 }
-
