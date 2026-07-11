@@ -8,11 +8,11 @@ def classify_concern_with_gemini(user_concern: str) -> str:
     
     # OpenRouter uses OpenAI-compatible endpoints
     llm = ChatOpenAI(
-        model="google/gemini-1.5-flash",
-        temperature=0.2,
-        openai_api_key=settings.openrouter_api_key,
-        openai_api_base="https://openrouter.ai/api/v1"
-    )
+    model="google/gemini-flash-latest",
+    temperature=0.2,
+    openai_api_key=settings.openrouter_api_key,
+    openai_api_base="https://openrouter.ai/api/v1"
+)
     
     prompt = (
         "You are a helpful Women Safety & Awareness Assistant. "
