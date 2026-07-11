@@ -16,7 +16,11 @@ app = FastAPI(title="Women Safety Assistant", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://women-safety-awareness-assistant-35v4-1ovznruf0.vercel.app",
+        "https://women-safety-awareness-assistant-35v4.vercel.app",
+        "http://localhost:3000"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
