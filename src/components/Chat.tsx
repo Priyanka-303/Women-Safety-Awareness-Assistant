@@ -1,24 +1,24 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { 
-  Send, 
-  Shield, 
-  Heart, 
-  AlertCircle, 
-  Users, 
-  MapPin, 
+import {
+  Send,
+  Shield,
+  Heart,
+  AlertCircle,
+  Users,
+  MapPin,
   Plus,
   Trash2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { 
-  Sheet, 
-  SheetContent, 
-  SheetHeader, 
-  SheetTitle, 
-  SheetTrigger 
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger
 } from "@/components/ui/sheet";
 import { toast } from "sonner";
 
@@ -33,6 +33,11 @@ interface EmergencyContact {
   phone: string;
 }
 
+// Always call our own Next.js API route, never the backend directly.
+// This avoids CORS entirely (same-origin request) and keeps BACKEND_URL
+// server-side only, never exposed to the browser.
+const CHAT_ENDPOINT = "/api/chat";
+
 export function Chat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -43,14 +48,17 @@ export function Chat() {
   const [newContactName, setNewContactName] = useState("");
   const [newContactPhone, setNewContactPhone] = useState("");
   const [isSOSLoading, setIsSOSLoading] = useState(false);
-  
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Load emergency contacts from local storage
     const saved = localStorage.getItem("emergency_contacts");
     if (saved) {
-      setEmergencyContacts(JSON.parse(saved));
+      try {
+        setEmergencyContacts(JSON.parse(saved));
+      } catch {
+        console.warn("Could not parse saved emergency contacts");
+      }
     }
   }, []);
 
@@ -72,11 +80,15 @@ export function Chat() {
     setIsLoading(true);
 
     try {
-      const response = await fetch("https://women-safety-awareness-assistant-2.onrender.com/chat", {
+      const response = await fetch(CHAT_ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: userMessage, session_id: sessionId }),
       });
+
+      if (!response.ok) {
+        throw new Error(`Request failed: ${response.status}`);
+      }
 
       const data = await response.json();
       setSessionId(data.session_id);
@@ -85,7 +97,8 @@ export function Chat() {
         ...prev,
         { role: "assistant", content: data.response },
       ]);
-    } catch {
+    } catch (err) {
+      console.error("Chat request failed:", err);
       toast.error("Connection error. Please try again.");
       setMessages((prev) => [
         ...prev,
@@ -105,12 +118,13 @@ export function Chat() {
     toast.info("Triggering SOS alert...");
 
     try {
-      // Get location if possible
       let location = null;
       if ("geolocation" in navigator) {
         try {
           const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-            navigator.geolocation.getCurrentPosition(resolve, reject);
+            navigator.geolocation.getCurrentPosition(resolve, reject, {
+              timeout: 5000,
+            });
           });
           location = {
             lat: position.coords.latitude,
@@ -118,15 +132,15 @@ export function Chat() {
             accuracy: position.coords.accuracy
           };
         } catch (err) {
-          console.warn("Location access denied", err);
+          console.warn("Location access denied or unavailable", err);
         }
       }
 
-      const response = await fetch("https://women-safety-awareness-assistant-2.onrender.com/chat", {
+      const response = await fetch(CHAT_ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          message: "SOS EMERGENCY TRIGGERED", 
+        body: JSON.stringify({
+          message: "SOS EMERGENCY TRIGGERED",
           session_id: sessionId,
           is_sos: true,
           location
@@ -134,15 +148,18 @@ export function Chat() {
       });
 
       if (response.ok) {
+        const data = await response.json();
+        setSessionId(data.session_id);
         toast.success("Emergency contacts and support services have been notified.");
-        setMessages(prev => [...prev, { 
-          role: "assistant", 
-          content: "⚠️ SOS ALERT ACTIVATED. Help is being notified. Please stay where you are if it's safe, or move to a crowded area. I'm staying with you." 
+        setMessages(prev => [...prev, {
+          role: "assistant",
+          content: data.response || "⚠️ SOS ALERT ACTIVATED. Help is being notified. Please stay where you are if it's safe, or move to a crowded area. I'm staying with you."
         }]);
       } else {
-        throw new Error("SOS failed");
+        throw new Error(`SOS request failed: ${response.status}`);
       }
-    } catch {
+    } catch (err) {
+      console.error("SOS request failed:", err);
       toast.error("Failed to send SOS. Please call emergency services directly.");
     } finally {
       setIsSOSLoading(false);
@@ -210,7 +227,7 @@ export function Chat() {
                 {unitInfo.label}
               </span>
             )}
-            
+
             <Sheet>
               <SheetTrigger asChild>
                 <Button variant="ghost" size="icon" className="text-gray-500">
@@ -224,13 +241,13 @@ export function Chat() {
                 <div className="mt-6 space-y-6">
                   <div className="space-y-4">
                     <div className="grid gap-2">
-                      <Input 
-                        placeholder="Contact Name" 
+                      <Input
+                        placeholder="Contact Name"
                         value={newContactName}
                         onChange={(e) => setNewContactName(e.target.value)}
                       />
-                      <Input 
-                        placeholder="Phone Number" 
+                      <Input
+                        placeholder="Phone Number"
                         value={newContactPhone}
                         onChange={(e) => setNewContactPhone(e.target.value)}
                       />
@@ -252,9 +269,9 @@ export function Chat() {
                               <p className="text-sm font-medium text-gray-900">{contact.name}</p>
                               <p className="text-xs text-gray-500">{contact.phone}</p>
                             </div>
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
+                            <Button
+                              variant="ghost"
+                              size="icon"
                               className="text-red-500 hover:text-red-600 hover:bg-red-50"
                               onClick={() => removeContact(contact.id)}
                             >
@@ -269,8 +286,8 @@ export function Chat() {
               </SheetContent>
             </Sheet>
 
-            <Button 
-              variant="destructive" 
+            <Button
+              variant="destructive"
               className="bg-red-600 hover:bg-red-700 shadow-lg shadow-red-200 font-bold px-6"
               onClick={handleSOS}
               disabled={isSOSLoading}
@@ -301,7 +318,7 @@ export function Chat() {
                   I'm your AI companion dedicated to your safety and wellbeing. Everything we discuss is confidential.
                 </p>
               </div>
-              
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-w-lg mx-auto mt-8">
                 {[
                   "I'm traveling alone and feel uneasy",
@@ -365,12 +382,17 @@ export function Chat() {
       </main>
 
       <footer className="bg-white border-t border-gray-100 p-4 pb-8 md:pb-4">
-        <form 
-          onSubmit={sendMessage} 
+        <form
+          onSubmit={sendMessage}
           className="max-w-3xl mx-auto flex items-end gap-3"
         >
           <div className="flex-1 relative">
+            <label htmlFor="chat-input" className="sr-only">
+              Type your concern
+            </label>
             <textarea
+              id="chat-input"
+              name="chat-input"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
