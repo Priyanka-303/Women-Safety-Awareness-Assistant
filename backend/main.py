@@ -14,14 +14,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Women Safety Assistant", lifespan=lifespan)
 
+# CORS Configuration - Allow all origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://women-safety-awareness-assistant-35v4.vercel.app",
-        "https://*.vercel.app",  # Wildcard for all Vercel preview URLs
-        "http://localhost:3000"
-    ],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
