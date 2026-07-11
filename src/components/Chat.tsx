@@ -36,7 +36,7 @@ interface EmergencyContact {
 // Always call our own Next.js API route, never the backend directly.
 // This avoids CORS entirely (same-origin request) and keeps BACKEND_URL
 // server-side only, never exposed to the browser.
-const CHAT_ENDPOINT = "/api/chat";
+const CHAT_ENDPOINT = "https://women-safety-awareness-assistant-2.onrender.com/chat";
 
 export function Chat() {
   const [messages, setMessages] = useState<Message[]>([]);
