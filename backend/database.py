@@ -19,12 +19,12 @@ async def save_conversation(state: dict) -> None:
         "user_age": state.get("user_age"),
         "user_concern": state.get("user_concern"),
         "care_unit": state.get("care_unit"),
+        "current_node": state.get("current_node"),
+        "awaiting_field": state.get("awaiting_field"),
         "messages": state.get("messages", []),
         "webhook_sent": state.get("webhook_sent", False),
     }
-
     existing = supabase.table("conversations").select("id").eq("session_id", state["session_id"]).execute()
-
     if existing.data:
         supabase.table("conversations").update(data).eq("session_id", state["session_id"]).execute()
     else:
@@ -43,7 +43,6 @@ async def send_webhook(state: dict) -> bool:
         "user_concern": state.get("user_concern"),
         "care_unit": state.get("care_unit"),
     }
-
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(settings.webhook_url, json=payload, timeout=10)
