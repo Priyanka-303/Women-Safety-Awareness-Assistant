@@ -6,13 +6,13 @@ from config import get_settings
 def classify_concern_with_gemini(user_concern: str) -> str:
     settings = get_settings()
     
-    # OpenRouter uses OpenAI-compatible endpoints
+    # Using OpenAI's basic, reliable GPT-3.5-turbo
     llm = ChatOpenAI(
-    model="google/gemini-flash-latest",
-    temperature=0.2,
-    openai_api_key=settings.openrouter_api_key,
-    openai_api_base="https://openrouter.ai/api/v1"
-)
+        model="openai/gpt-3.5-turbo",  
+        temperature=0.2,
+        api_key=settings.openrouter_api_key,
+        base_url="https://openrouter.ai/api/v1"
+    )
     
     prompt = (
         "You are a helpful Women Safety & Awareness Assistant. "
@@ -28,6 +28,10 @@ def classify_concern_with_gemini(user_concern: str) -> str:
 
     response = llm.invoke([HumanMessage(content=prompt)])
     category = response.content.strip()
+    
+    # Clean up the response
+    category = category.replace('"', '').replace("'", "").strip()
+    
     return category
 
 def get_care_unit_from_category(category: str) -> CareUnit:
